@@ -6,15 +6,17 @@ Parametrik CadQuery modeli. Çalıştırınca STL + STEP dosyalarını `out/` kl
     pip install cadquery
     python orbea_cm05_garmin_insert.py
 
-Koordinatlar (montajlı hâlde, yukarıdan bakış):
-    +Y = bisikletin önü (ön teker yönü), +X = sürücünün sağı, +Z = yukarı.
-    Alt yüz z=0'da (CM-05 yuvasına oturan yüz), üst yüz z=HEIGHT.
+Geometri, Cults3D'deki "Garmin Orbea support" modelinin üstten görüntüsünden ölçüldü
+(disk Ø32.2 + yuvarlak konum tırnağı = 33.9 mm). Görüntüde görünmeyen yükseklikler
+(zemin, dudak altı boşluk, çıkıntı yüksekliği) tahmindir; parametrelerle ayarlanır.
 
-Garmin cihaz yan çevrilmiş takılır, saat yönünde 90° çevrilince kilitlenir. Kilitli hâlde
-cihazın tırnakları ±X'teki dudakların altındadır; ±Y'de tırnak giriş pencereleri vardır.
+Koordinatlar (üstten bakış, cihazın takıldığı yüz):
+    Konum tırnağı -Y'de (saat 6). Açılar +X'ten saat yönünün tersine ölçülür.
+    Alt yüz z=0 (CM-05 yuvasına oturan yüz), üst yüz z=height.
 
-ÖNEMLİ: Garmin çeyrek-tur ölçüleri Garmin tarafından yayımlanmaz. Aşağıdaki "GARMIN ARAYÜZÜ"
-değerleri tahmindir; ilk baskıdan sonra gerekirse onları ayarla (README'deki tabloya bak).
+Çalışma şekli: Garmin, tırnakları saat 3 ve 9 yönündeki pencerelere gelecek şekilde (yan) takılır,
+saat yönünde 90° çevrilir. Tırnaklar saat 12 ve 6 yönündeki dudakların altına girer ve esnek
+dillerin üstündeki klik çıkıntılarına oturur. Durdurucular fazla ve ters dönmeyi engeller.
 """
 
 import argparse
@@ -27,188 +29,189 @@ import cadquery as cq
 
 @dataclass(frozen=True)
 class Params:
-    # --- DIŞ GÖVDE (CM-05 yuvasına oturan kısım) ---
-    outer_d: float = 33.9          # yuvarlak çap (Cults modeli: Y = 33.9 mm)
-    flat_to_flat: float = 32.2     # iki düz kenar arası (Cults modeli: X = 32.2 mm)
-    flats_axis: str = "x"          # "x": düz kenarlar sağ/solda, "y": düz kenarlar ön/arkada
+    # --- DIŞ GÖVDE ---
+    outer_d: float = 32.2          # disk çapı (görüntüden: 706 px = 32.2 mm)
     height: float = 6.0            # toplam kalınlık (Cults modeli: Z = 6 mm)
-    outline_offset: float = 0.0    # yuvaya sıkı gelirse -0.1 / -0.2 yap (her kenardan)
-    top_chamfer: float = 0.5
-    bottom_chamfer: float = 0.4    # baskıdaki "fil ayağı" taşmasını önler
+    outline_offset: float = 0.0    # CM-05 yuvasına sıkı gelirse -0.1 / -0.2 (her kenardan)
+    top_chamfer: float = 0.3
+    bottom_chamfer: float = 0.3
+
+    # --- KONUM TIRNAĞI (kenardaki yuvarlak çıkıntı, CM-05 yuvasındaki kanala girer) ---
+    key_d: float = 3.44            # tırnak çapı
+    key_center_r: float = 16.1     # tırnak merkezinin uzaklığı (disk kenarı: 1.72 mm dışarı taşar)
+    key_height: float = 0.0        # 0 = alttan üste tam boy; > 0 = yalnızca alttan bu yüksekliğe kadar
 
     # --- GARMIN ARAYÜZÜ (dişi çeyrek-tur) ---
-    floor_z: float = 2.4           # taban kalınlığı (cihazın oturduğu zemin yüksekliği)
-    slot_gap: float = 1.8          # dudak altındaki boşluk yüksekliği (tırnak kalınlığı + boşluk)
-    slot_d: float = 27.6           # dudak altı oyuğun çapı (tırnak uçları buraya döner)
-    lip_inner_d: float = 23.4      # dudakların iç çapı (cihazın orta göbeği buradan geçer)
-    window_w: float = 11.0         # tırnak giriş penceresi genişliği
-    tab_w: float = 9.0             # cihaz tırnağının genişliği (durdurucu konumu buna göre)
-    stop_clearance: float = 0.3    # kilitli tırnak ile durdurucu arası boşluk
-    lip_chamfer: float = 0.5       # dudak iç üst kenarı pahı (cihazı yerine yönlendirir)
+    floor_z: float = 2.4           # zemin yüksekliği (cihazın oturduğu yüzey)
+    slot_gap: float = 1.9          # dudak altındaki boşluk (cihaz tırnağı buraya girer)
+    lip_inner_d: float = 25.2      # dudakların iç çapı
+    slot_d: float = 29.6           # dudak altı oyuğun ve pencerelerin dış çapı
+    lip_chamfer: float = 0.2       # dudak iç üst kenarı pahı
+    lock_deg: float = 90.0         # kilitli tırnağın merkezi (saat 12; diğeri +180°)
+    lip_far_deg: float = 11.0      # dudağın kapalı ucu (üst dudak 11°…130°, alt dudak +180°)
+    entry_deg: float = 130.0       # dudağın giriş yüzünün iç ucu
+    entry_dir_deg: float = 160.0   # giriş yüzünün doğrultusu (pencereye doğru eğik)
+    tab_half_deg: float = 10.5     # cihaz tırnağının yarı açısal genişliği
+    stop_clear_deg: float = 1.0    # kilitli tırnak ile durdurucu arası
 
-    # --- KLİK (detent) ---
-    detent_h: float = 0.35         # kilit öncesi tırnağın üstünden geçtiği çıkıntı (0 = yok)
-    detent_r: float = 0.6
-    detent_gap: float = 0.15       # kilitli tırnak ile çıkıntı arası
+    # --- ESNEK DİL (U yarık) ve KLİK ÇIKINTISI ---
+    leg_x_in: float = 3.85         # U yarık bacaklarının iç kenarı (|x|)
+    leg_x_out: float = 6.08        # U yarık bacaklarının dış kenarı (|x|)
+    leg_end_y: float = 6.19        # bacakların yuvarlak uç merkezi (dilin kökü)
+    band_r_in: float = 11.8        # dudak önündeki yay yarığın iç yarıçapı (dış: dudak iç yarıçapı)
+    band_start_deg: float = 59.5   # yay yarığın başladığı açı (giriş ucuna kadar sürer)
+    tail_w: float = 0.8            # giriş yüzü boyunca uzanan ince yarığın genişliği
+    bump_h: float = 0.4            # klik çıkıntısı yüksekliği (0 = yok)
+    bump_r: tuple = (6.85, 11.65)  # çıkıntı tabanı: iç/dış yarıçap
+    bump_half_deg: float = 10.0    # çıkıntı tabanı yarı açı
+    bump_top_r: tuple = (7.45, 11.1)
+    bump_top_half_deg: float = 4.5
+    tongue_relief: float = 0.0     # dilin altından boşaltma (esneme payı); 0 = yok
 
     # --- MERKEZ VİDA (adaptörü CM-05 gövdesine bağlar) ---
-    screw_hole_d: float = 3.4      # M3 geçiş deliği (0 = delik yok)
-    csk_d: float = 6.4             # havşa çapı (DIN 7991 / ISO 10642 M3 başı = 6.0)
+    screw_hole_d: float = 3.2      # M3 geçiş deliği (görüntüde ~Ø2.8; 0 = delik yok)
+    csk_d: float = 6.0             # havşa çapı (görüntüde ~Ø5.8; DIN 7991 M3 başı 6.0)
     csk_recess: float = 0.2        # vida başı zeminin bu kadar altında kalır
 
-    # --- KENAR ÇENTİĞİ ---
-    notch_on: str = "flat"         # "flat": düz kenarda, "round": yuvarlak kenarda, "none": çentik yok
-    notch_count: int = 1           # 1 ya da 2 (karşılıklı)
-    notch_shape: str = "rect"      # "rect": dikdörtgen, "u": yuvarlak dipli, "v": üçgen
-    notch_w: float = 3.0           # kenar boyunca genişlik
-    notch_depth: float = 1.2       # kenardan içeri derinlik (düz kenarda en fazla ~1.5)
-    notch_height: float = 0.0      # 0 = alttan üste tam boy; > 0 = yalnızca alttan bu yüksekliğe kadar
 
-    # --- YÖN İŞARETİ ---
-    mark_depth: float = 0.4        # ±Y'deki üçgen işaretler (bisiklet ekseni); 0 = yok
+def _pt(r: float, deg: float) -> tuple:
+    a = math.radians(deg)
+    return (r * math.cos(a), r * math.sin(a))
 
 
-def _annulus(r_in: float, r_out: float, z0: float, h: float) -> cq.Workplane:
-    return (
-        cq.Workplane("XY")
-        .workplane(offset=z0)
-        .circle(r_out)
-        .circle(r_in)
-        .extrude(h)
-    )
+def _prism(pts, z0: float, z1: float) -> cq.Workplane:
+    return cq.Workplane("XY").workplane(offset=z0).polyline(pts).close().extrude(z1 - z0)
 
 
-def _box(x0, x1, y0, y1, z0, z1) -> cq.Workplane:
-    return cq.Workplane("XY").box(
-        x1 - x0, y1 - y0, z1 - z0, centered=False
-    ).translate((x0, y0, z0))
+def _ring(r_in: float, r_out: float, z0: float, z1: float) -> cq.Workplane:
+    wp = cq.Workplane("XY").workplane(offset=z0).circle(r_out)
+    if r_in > 0:
+        wp = wp.circle(r_in)
+    return wp.extrude(z1 - z0)
+
+
+def _fan(a0: float, a1: float, r: float = 20.0, n: int = 24):
+    """Merkezden (a0..a1) açı aralığını kaplayan çokgen (yay dilimi kesmek için)."""
+    return [(0.0, 0.0)] + [_pt(r, a0 + (a1 - a0) * i / n) for i in range(n + 1)]
+
+
+def _rot180(wp: cq.Workplane) -> cq.Workplane:
+    return wp.rotate((0, 0, 0), (0, 0, 1), 180)
 
 
 def build(p: Params) -> cq.Workplane:
-    r_out = p.outer_d / 2 + p.outline_offset
-    half_flat = p.flat_to_flat / 2 + p.outline_offset
-    r_slot = p.slot_d / 2
-    r_in = p.lip_inner_d / 2
-    zf = p.floor_z
+    h, zf = p.height, p.floor_z
     z_lip = zf + p.slot_gap
-    h = p.height
+    r_out = p.outer_d / 2 + p.outline_offset
+    r_lip, r_slot = p.lip_inner_d / 2, p.slot_d / 2
     assert z_lip < h - 1.0, "dudak çok ince: height / floor_z / slot_gap değerlerini kontrol et"
-    assert r_in < r_slot < half_flat - 1.5, "Garmin oyuğu dış gövdeye fazla yakın"
+    assert r_slot < r_out - 0.8, "pencere dış çapı gövdeye fazla yakın"
 
-    # Dış gövde: yuvarlak + iki düz kenar
-    span = 2 * r_out + 2
-    if p.flats_axis == "x":
-        clip = cq.Workplane("XY").box(2 * half_flat, span, h, centered=(True, True, False))
-    elif p.flats_axis == "y":
-        clip = cq.Workplane("XY").box(span, 2 * half_flat, h, centered=(True, True, False))
-    else:
-        raise ValueError("flats_axis 'x' ya da 'y' olmalı")
-    body = cq.Workplane("XY").circle(r_out).extrude(h).intersect(clip)
-    body = body.faces(">Z").edges().chamfer(p.top_chamfer)
-    body = body.faces("<Z").edges().chamfer(p.bottom_chamfer)
-
-    # Dudak altı oyuk, orta açıklık, tırnak pencereleri (±Y)
-    under_lip = cq.Workplane("XY").workplane(offset=zf).circle(r_slot).extrude(p.slot_gap)
-    centre = cq.Workplane("XY").workplane(offset=zf).circle(r_in).extrude(h - zf + 1)
-    windows = (
+    # Gövde: disk + konum tırnağı
+    body = cq.Workplane("XY").circle(r_out).extrude(h)
+    body = body.faces(">Z").edges().chamfer(p.top_chamfer).faces("<Z").edges().chamfer(p.bottom_chamfer)
+    kh = p.key_height if p.key_height > 0 else h
+    key = (
         cq.Workplane("XY")
-        .workplane(offset=zf)
-        .rect(p.window_w, 2 * r_slot + 2)
-        .extrude(h - zf + 1)
-        .intersect(cq.Workplane("XY").workplane(offset=zf).circle(r_slot).extrude(h - zf + 1))
+        .center(0, -(p.key_center_r + p.outline_offset))
+        .circle(p.key_d / 2 + p.outline_offset)
+        .extrude(kh)
     )
-    body = body.cut(under_lip).cut(centre).cut(windows)
+    key = key.faces("<Z").edges().chamfer(p.bottom_chamfer)
+    if kh >= h:
+        key = key.faces(">Z").edges().chamfer(p.top_chamfer)
+    body = body.union(key)
 
-    # Dudak iç kenarı pahı
+    # Giriş yüzü: A noktasından entry_dir doğrultusunda giden doğru (dudak bu doğrunun saat yönü
+    # tarafında, pencere diğer tarafında kalır).
+    A = _pt(r_lip, p.entry_deg)
+    d = _pt(1.0, p.entry_dir_deg)
+    n = (-d[1], d[0])  # pencere tarafına bakan normal
+    Ai = (A[0] - 1.5 * d[0], A[1] - 1.5 * d[1])
+    Bo = (A[0] + 8.0 * d[0], A[1] + 8.0 * d[1])
+    b_deg = math.degrees(math.atan2(Bo[1], Bo[0]))
+    window_end = p.lip_far_deg + 180.0  # karşı dudağın kapalı ucu
+    stop_deg = p.lock_deg - p.tab_half_deg - p.stop_clear_deg
+
+    def arc(a0, a1, r=20.0, k=12):
+        return [_pt(r, a0 + (a1 - a0) * i / k) for i in range(k + 1)]
+
+    lip_ring = _ring(r_lip - 0.01, r_slot, zf, h + 1)
+
+    # Cep: orta açıklık + iki pencere (üstten zemine kadar)
+    window = _prism([Ai, Bo] + arc(b_deg, window_end)[1:] + [_pt(r_lip - 1, window_end)], zf, h + 1)
+    window = window.intersect(lip_ring)
+    pocket = _ring(0, r_lip, zf, h + 1).union(window).union(_rot180(window))
+    body = body.cut(pocket)
+
+    # Dudak altı oyuk: giriş yüzünden durdurucuya kadar (ötesi dolu = durdurucu)
+    slot = _prism([_pt(r_lip - 1, stop_deg)] + arc(stop_deg, b_deg) + [Bo, Ai], zf, z_lip)
+    slot = slot.intersect(_ring(r_lip - 0.01, r_slot, zf, z_lip))
+    body = body.cut(slot).cut(_rot180(slot))
+
+    # Dudak iç üst kenarı pahı
     if p.lip_chamfer > 0:
         c = p.lip_chamfer
-        cone = cq.Solid.makeCone(r_in, r_in + c + 0.3, c + 0.3, pnt=cq.Vector(0, 0, h - c))
+        cone = cq.Solid.makeCone(r_lip, r_lip + c + 0.3, c + 0.3, pnt=cq.Vector(0, 0, h - c))
         body = body.cut(cq.Workplane("XY").add(cone))
 
-    # Durdurucular: tırnak saat yönünde döner (+Y -> +X), kilitli konumu geçemez.
-    # +X dudağı için durdurucu y < -(tab_w/2 + boşluk) bölgesinde; diğeri 180° simetrik.
-    y_stop = p.tab_w / 2 + p.stop_clearance
-    stop = _box(p.window_w / 2, r_slot + 1, -(r_slot + 1), -y_stop, zf, z_lip).intersect(
-        _annulus(r_in, r_slot + 1, zf, p.slot_gap)
+    # Zemindeki boydan boya yarıklar: U bacakları + dudak önündeki yay + giriş yüzü boyunca kuyruk.
+    zc0, zc1 = -1.0, zf + 0.01
+    band = _prism(_fan(p.band_start_deg, p.entry_deg + 1.5), zc0, zc1).intersect(
+        _ring(p.band_r_in, r_lip, zc0, zc1)
     )
-    body = body.union(stop).union(stop.rotate((0, 0, 0), (0, 0, 1), 180))
-
-    # Klik çıkıntısı: kilitli tırnağın arka kenarının hemen gerisinde, dudak altında radyal sırt.
-    if p.detent_h > 0:
-        foot = math.sqrt(p.detent_r**2 - (p.detent_r - p.detent_h) ** 2)
-        y_det = p.tab_w / 2 + p.detent_gap + foot
-        ridge = (
-            cq.Workplane("YZ")
-            .workplane(offset=0)
-            .center(y_det, zf + p.detent_h - p.detent_r)
-            .circle(p.detent_r)
-            .extrude(r_slot + 1)
-            .intersect(_annulus(r_in, r_slot + 1, zf, p.slot_gap))
+    tail = _prism(
+        [Ai, Bo, (Bo[0] + p.tail_w * n[0], Bo[1] + p.tail_w * n[1]),
+         (Ai[0] + p.tail_w * n[0], Ai[1] + p.tail_w * n[1])],
+        zc0, zc1,
+    ).intersect(_ring(p.band_r_in, r_slot, zc0, zc1))
+    cuts = band.union(tail)
+    leg_r = (p.leg_x_out - p.leg_x_in) / 2
+    for sx in (1, -1):
+        xc = sx * (p.leg_x_in + leg_r)
+        leg = (
+            cq.Workplane("XY").workplane(offset=zc0)
+            .center(xc, (p.leg_end_y + 12.5) / 2).rect(2 * leg_r, 12.5 - p.leg_end_y).extrude(zc1 - zc0)
+            .union(cq.Workplane("XY").workplane(offset=zc0).center(xc, p.leg_end_y).circle(leg_r)
+                   .extrude(zc1 - zc0))
+            .intersect(_ring(0, p.band_r_in + 0.4, zc0, zc1))
         )
-        body = body.union(ridge).union(ridge.rotate((0, 0, 0), (0, 0, 1), 180))
+        cuts = cuts.union(leg)
+    body = body.cut(cuts).cut(_rot180(cuts))
 
-    # Merkez havşa delik (vida üstten takılır, başı zeminle aynı hizada/altında kalır)
+    # Dilin altından isteğe bağlı boşaltma (esneme payı)
+    if p.tongue_relief > 0:
+        relief = _prism(
+            [(-p.leg_x_in, p.leg_end_y), (p.leg_x_in, p.leg_end_y), (p.leg_x_in, 13), (-p.leg_x_in, 13)],
+            -1, p.tongue_relief,
+        ).intersect(_ring(0, p.band_r_in, -1, p.tongue_relief))
+        body = body.cut(relief).cut(_rot180(relief))
+
+    # Klik çıkıntısı: dilin üstünde, eğimli kenarlı yay dilimi (kilitli tırnağın altına gelir)
+    if p.bump_h > 0:
+        lo = [_pt(p.bump_r[0], p.lock_deg - p.bump_half_deg), _pt(p.bump_r[1], p.lock_deg - p.bump_half_deg),
+              _pt(p.bump_r[1], p.lock_deg + p.bump_half_deg), _pt(p.bump_r[0], p.lock_deg + p.bump_half_deg)]
+        hi = [_pt(p.bump_top_r[0], p.lock_deg - p.bump_top_half_deg),
+              _pt(p.bump_top_r[1], p.lock_deg - p.bump_top_half_deg),
+              _pt(p.bump_top_r[1], p.lock_deg + p.bump_top_half_deg),
+              _pt(p.bump_top_r[0], p.lock_deg + p.bump_top_half_deg)]
+        bump = (
+            cq.Workplane("XY").workplane(offset=zf - 0.01).polyline(lo).close()
+            .workplane(offset=p.bump_h + 0.01).polyline(hi).close().loft(combine=True)
+        )
+        body = body.union(bump).union(_rot180(bump))
+
+    # Merkez havşa delik (vida üstten takılır, başı zeminin altında kalır)
     if p.screw_hole_d > 0:
         r_h, r_c = p.screw_hole_d / 2, p.csk_d / 2
-        z_cone_top = zf - p.csk_recess
+        z_top = zf - p.csk_recess
         cone_h = r_c - r_h  # 90° havşa
         hole = cq.Solid.makeCylinder(r_h, zf + 2, pnt=cq.Vector(0, 0, -1))
-        cone = cq.Solid.makeCone(r_h, r_c, cone_h, pnt=cq.Vector(0, 0, z_cone_top - cone_h))
-        recess = cq.Solid.makeCylinder(r_c, p.csk_recess + 0.5, pnt=cq.Vector(0, 0, z_cone_top))
+        cone = cq.Solid.makeCone(r_h, r_c, cone_h, pnt=cq.Vector(0, 0, z_top - cone_h))
+        recess = cq.Solid.makeCylinder(r_c, p.csk_recess + 0.5, pnt=cq.Vector(0, 0, z_top))
         body = body.cut(cq.Workplane("XY").add(hole.fuse(cone).fuse(recess)))
 
-    # Kenar çentiği: düz kenarın ortasında, A'da +X (sağ) / B'de +Y (ön); 2 adetse karşısında da.
-    # Düz kenar seçildi çünkü Cults3D'nin bildirdiği 33.9 mm ölçüsü yuvarlak kenardaki bir çentikle
-    # (33.8 mm'ye düşerdi) uyuşmuyor; düz kenardaki çentik 32.2 mm ölçüsünü de değiştirmez.
-    notch_angles = []
-    if p.notch_on != "none":
-        on_round = p.notch_on == "round"
-        if not on_round and p.notch_on != "flat":
-            raise ValueError("notch_on 'round', 'flat' ya da 'none' olmalı")
-        flats_on_x = p.flats_axis == "x"
-        first = 90 if on_round == flats_on_x else 0
-        notch_angles = [first, first + 180][: p.notch_count]
-        edge = r_out if on_round else half_flat
-        x0, w, d = edge - p.notch_depth, p.notch_w, p.notch_depth
-        assert x0 > r_slot + 0.6, "çentik Garmin oyuğuna fazla yakın: notch_depth değerini küçült"
-        z0, z1 = -1, (p.notch_height if p.notch_height > 0 else h + 1)
-        sk = cq.Workplane("XY").workplane(offset=z0)
-        if p.notch_shape == "rect":
-            cutter = _box(x0, edge + 1, -w / 2, w / 2, z0, z1)
-        elif p.notch_shape == "u":
-            cutter = sk.center(x0 + w / 2, 0).circle(w / 2).extrude(z1 - z0).union(
-                _box(x0 + w / 2, edge + 1, -w / 2, w / 2, z0, z1)
-            )
-        elif p.notch_shape == "v":
-            half_out = w / 2 * (d + 1) / d
-            cutter = sk.polyline([(x0, 0), (edge + 1, -half_out), (edge + 1, half_out)]).close().extrude(z1 - z0)
-        else:
-            raise ValueError("notch_shape 'rect', 'u' ya da 'v' olmalı")
-        for a in notch_angles:
-            body = body.cut(cutter.rotate((0, 0, 0), (0, 0, 1), a))
-
-    # Bisiklet ekseni işaretleri: ±Y'de dışa bakan üçgenler (ön-arka yönünü gösterir).
-    # Çentiğin olduğu tarafa konmaz; orada çentik zaten işaret görevi görür.
-    if p.mark_depth > 0:
-        tri = (
-            cq.Workplane("XY")
-            .workplane(offset=h - p.mark_depth)
-            .polyline([(-1.0, r_slot + 0.5), (1.0, r_slot + 0.5), (0, r_slot + 1.5)])
-            .close()
-            .extrude(p.mark_depth + 0.5)
-        )
-        for a in (0, 180):
-            if (90 + a) % 360 not in [n % 360 for n in notch_angles]:
-                body = body.cut(tri.rotate((0, 0, 0), (0, 0, 1), a))
-
     return body.clean()
-
-
-VARIANTS = {
-    # dosya adı son eki: (açıklama, parametre değişikliği)
-    "A_duz-kenarlar-sag-solda": ("CM-05 yuvasının düz kenarları sağ/sol tarafa bakıyorsa", {"flats_axis": "x"}),
-    "B_duz-kenarlar-on-arkada": ("CM-05 yuvasının düz kenarları ön/arka tarafa bakıyorsa", {"flats_axis": "y"}),
-}
 
 
 def main() -> None:
@@ -219,7 +222,7 @@ def main() -> None:
         nargs="*",
         default=[],
         metavar="AD=DEĞER",
-        help="parametre değiştir, ör. --set slot_gap=1.7 lip_inner_d=23.0",
+        help="parametre değiştir, ör. --set slot_gap=1.8 bump_h=0.3",
     )
     args = ap.parse_args()
 
@@ -227,19 +230,20 @@ def main() -> None:
     for item in args.set:
         key, val = item.split("=", 1)
         default = getattr(Params(), key)
-        overrides[key] = type(default)(val)
+        if isinstance(default, tuple):
+            overrides[key] = tuple(float(v) for v in val.split(","))
+        else:
+            overrides[key] = type(default)(val)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for suffix, (desc, variant) in VARIANTS.items():
-        p = replace(Params(), **{**variant, **overrides})
-        part = build(p)
-        stem = out / f"orbea_cm05_garmin_insert_{suffix}"
-        cq.exporters.export(part, f"{stem}.stl", tolerance=0.01, angularTolerance=0.1)
-        cq.exporters.export(part, f"{stem}.step")
-        bb = part.val().BoundingBox()
-        print(f"{stem.name}: {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen:.2f} mm, "
-              f"hacim {part.val().Volume():.0f} mm3  ({desc})")
+    p = replace(Params(), **overrides)
+    part = build(p)
+    stem = out / "orbea_cm05_garmin_insert"
+    cq.exporters.export(part, f"{stem}.stl", tolerance=0.01, angularTolerance=0.1)
+    cq.exporters.export(part, f"{stem}.step")
+    bb = part.val().BoundingBox()
+    print(f"{stem.name}: {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen:.2f} mm, hacim {part.val().Volume():.0f} mm3")
 
 
 if __name__ == "__main__":
