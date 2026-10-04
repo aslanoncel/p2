@@ -56,6 +56,14 @@ class Params:
     csk_d: float = 6.4             # havşa çapı (DIN 7991 / ISO 10642 M3 başı = 6.0)
     csk_recess: float = 0.2        # vida başı zeminin bu kadar altında kalır
 
+    # --- KENAR ÇENTİĞİ ---
+    notch_on: str = "flat"         # "flat": düz kenarda, "round": yuvarlak kenarda, "none": çentik yok
+    notch_count: int = 1           # 1 ya da 2 (karşılıklı)
+    notch_shape: str = "rect"      # "rect": dikdörtgen, "u": yuvarlak dipli, "v": üçgen
+    notch_w: float = 3.0           # kenar boyunca genişlik
+    notch_depth: float = 1.2       # kenardan içeri derinlik (düz kenarda en fazla ~1.5)
+    notch_height: float = 0.0      # 0 = alttan üste tam boy; > 0 = yalnızca alttan bu yüksekliğe kadar
+
     # --- YÖN İŞARETİ ---
     mark_depth: float = 0.4        # ±Y'deki üçgen işaretler (bisiklet ekseni); 0 = yok
 
@@ -149,7 +157,38 @@ def build(p: Params) -> cq.Workplane:
         recess = cq.Solid.makeCylinder(r_c, p.csk_recess + 0.5, pnt=cq.Vector(0, 0, z_cone_top))
         body = body.cut(cq.Workplane("XY").add(hole.fuse(cone).fuse(recess)))
 
-    # Bisiklet ekseni işaretleri: ±Y'de dışa bakan üçgenler (ön-arka yönünü gösterir)
+    # Kenar çentiği: düz kenarın ortasında, A'da +X (sağ) / B'de +Y (ön); 2 adetse karşısında da.
+    # Düz kenar seçildi çünkü Cults3D'nin bildirdiği 33.9 mm ölçüsü yuvarlak kenardaki bir çentikle
+    # (33.8 mm'ye düşerdi) uyuşmuyor; düz kenardaki çentik 32.2 mm ölçüsünü de değiştirmez.
+    notch_angles = []
+    if p.notch_on != "none":
+        on_round = p.notch_on == "round"
+        if not on_round and p.notch_on != "flat":
+            raise ValueError("notch_on 'round', 'flat' ya da 'none' olmalı")
+        flats_on_x = p.flats_axis == "x"
+        first = 90 if on_round == flats_on_x else 0
+        notch_angles = [first, first + 180][: p.notch_count]
+        edge = r_out if on_round else half_flat
+        x0, w, d = edge - p.notch_depth, p.notch_w, p.notch_depth
+        assert x0 > r_slot + 0.6, "çentik Garmin oyuğuna fazla yakın: notch_depth değerini küçült"
+        z0, z1 = -1, (p.notch_height if p.notch_height > 0 else h + 1)
+        sk = cq.Workplane("XY").workplane(offset=z0)
+        if p.notch_shape == "rect":
+            cutter = _box(x0, edge + 1, -w / 2, w / 2, z0, z1)
+        elif p.notch_shape == "u":
+            cutter = sk.center(x0 + w / 2, 0).circle(w / 2).extrude(z1 - z0).union(
+                _box(x0 + w / 2, edge + 1, -w / 2, w / 2, z0, z1)
+            )
+        elif p.notch_shape == "v":
+            half_out = w / 2 * (d + 1) / d
+            cutter = sk.polyline([(x0, 0), (edge + 1, -half_out), (edge + 1, half_out)]).close().extrude(z1 - z0)
+        else:
+            raise ValueError("notch_shape 'rect', 'u' ya da 'v' olmalı")
+        for a in notch_angles:
+            body = body.cut(cutter.rotate((0, 0, 0), (0, 0, 1), a))
+
+    # Bisiklet ekseni işaretleri: ±Y'de dışa bakan üçgenler (ön-arka yönünü gösterir).
+    # Çentiğin olduğu tarafa konmaz; orada çentik zaten işaret görevi görür.
     if p.mark_depth > 0:
         tri = (
             cq.Workplane("XY")
@@ -158,7 +197,9 @@ def build(p: Params) -> cq.Workplane:
             .close()
             .extrude(p.mark_depth + 0.5)
         )
-        body = body.cut(tri).cut(tri.rotate((0, 0, 0), (0, 0, 1), 180))
+        for a in (0, 180):
+            if (90 + a) % 360 not in [n % 360 for n in notch_angles]:
+                body = body.cut(tri.rotate((0, 0, 0), (0, 0, 1), a))
 
     return body.clean()
 

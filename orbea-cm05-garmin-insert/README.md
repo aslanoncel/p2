@@ -32,6 +32,18 @@ Adaptörün üstündeki iki küçük **▲ işareti** bisikletin ön-arka ekseni
 ön tekere doğru bakmalı. Yan tarafa bakıyorlarsa diğer varyantı bas. Emin değilsen ikisini de bas,
 her biri yaklaşık 4–5 g ve 20 dakikalık bir baskı.
 
+## Kenar çentiği
+
+Orijinal parçanın kenarında olduğu gibi bu modelde de bir çentik var. Düz kenarlardan birinin
+ortasında, dikdörtgen biçiminde ve parçanın alttan üste tüm yüksekliği boyunca uzanıyor:
+**3 mm genişlik × 1.2 mm derinlik**. A'da sağ düz kenarda, B'de ön düz kenardadır. B'de o taraftaki
+▲ işareti kaldırıldı, çünkü çentik zaten ön tarafı gösteriyor.
+
+Çentiğin konumu, şekli ve ölçüsü orijinal dosya incelenemediği için tahmin. Düz kenarın seçilmesinin
+nedeni şu: Cults3D parçanın ölçüsünü 33.9 mm bildiriyor. Çentik yuvarlak kenarın tam ortasında
+olsaydı bu ölçü 33.8 mm'ye düşerdi. Düz kenardaki bir çentik ise iki ölçüyü de değiştirmez.
+Orijinalinden farklıysa aşağıdaki çentik parametrelerini değiştir.
+
 ## Montaj
 
 1. Adaptörü CM-05 yuvasına oturt.
@@ -65,12 +77,18 @@ tahminler. Yazıcıdan yazıcıya da ±0.1–0.2 mm fark çıkabilir. Gerekirse 
 | Tam düz konuma gelmeden duruyor | `tab_w` | 9.0 | büyüt (9.6) |
 | Kilitliyken yukarı çekince çıkıyor | `lip_inner_d` | 23.4 | küçült (22.8) |
 | CM-05'in vidası M3 değil | `screw_hole_d`, `csk_d` | 3.4 / 6.4 | M4 için 4.4 / 8.4 |
+| Çentik yuvarlak kenarda olmalı | `notch_on` | flat | `round` (çentiksiz için `none`) |
+| Çentik iki tane, karşılıklı olmalı | `notch_count` | 1 | 2 |
+| Çentiğin şekli farklı | `notch_shape` | rect | `u` (yuvarlak dipli) ya da `v` (üçgen) |
+| Çentiğin ölçüsü farklı | `notch_w`, `notch_depth` | 3.0 / 1.2 | ölçtüğün değer (düz kenarda derinlik en fazla ~1.5) |
+| Çentik yalnızca altta olmalı | `notch_height` | 0 (tam boy) | alttan yüksekliği, ör. 2.0 |
 
 Yeniden üretmek için:
 
 ```bash
 pip install cadquery
 python orbea_cm05_garmin_insert.py --set slot_gap=1.7 detent_h=0.45
+python orbea_cm05_garmin_insert.py --set notch_on=round notch_w=4 notch_depth=1.5
 ```
 
 Komut her iki varyantı da `out/` klasörüne STL ve STEP olarak yeniden yazar.
@@ -81,7 +99,7 @@ Komut her iki varyantı da `out/` klasörüne STL ve STEP olarak yeniden yazar.
   bilgisi Cults3D sayfasından ve Orbea'nın CM-05 / CT-02 ürün açıklamalarından alındı.
   Orijinal STL dosyası ve CM-05 yuvasının teknik çizimi incelenemedi.
 - **Tahmin edilenler:** Vida yeri ve çapı (ortada, M3 havşa), düz kenarların sayısı (iki simetrik düz
-  kenar) ve Garmin dişi geometrisi. Hepsi parametre olarak ayarlanabilir.
+  kenar), kenar çentiğinin yeri ve ölçüsü, Garmin dişi geometrisi. Hepsi parametre olarak ayarlanabilir.
 - **Doğrulanan:** Model, tahmini ölçülerle oluşturulmuş sanal bir Garmin erkek parçasıyla test edildi.
   Bu test geometrinin kendi içinde tutarlı olduğunu gösteriyor, gerçek cihazla uyumu kanıtlamıyor.
   Sanal parça yukarıdan çakışmadan giriyor, saat yönünde serbestçe dönüyor ve son birkaç derecede klik
