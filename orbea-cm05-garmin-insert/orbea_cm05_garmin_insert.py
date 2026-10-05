@@ -216,10 +216,11 @@ def build(p: Params) -> cq.Workplane:
     return body.clean()
 
 
-def stl_to_3mf(stl_path: Path, out_path: Path, name: str) -> None:
-    """İkili STL'yi 3MF çekirdek standardına uygun pakete çevirir (Bambu Studio, OrcaSlicer, PrusaSlicer,
-    Creality Print, Cura doğrudan açar). CadQuery'nin kendi 3MF çıktısı nesne kimliğini 0 yazıyor;
-    standart pozitif kimlik istediği için katı okuyucular reddedebilir, bu yüzden burada id=1 kullanılır."""
+def stl_to_3mf(stl_path: Path, out_path: Path, name: str, plate_xy=(128.0, 128.0)) -> None:
+    """İkili STL'yi 3MF çekirdek standardına uygun pakete çevirir. CadQuery'nin kendi 3MF çıktısı
+    lib3mf tarafından reddediliyor (nesne kimliği 0, [Content_Types].xml'de rels tanımı yok, kaynaksız
+    ağ), bu yüzden paket burada elle yazılır. Yerleşim dönüşümü parçayı tabla ortasına (varsayılan
+    128, 128 mm) koyar; 3MF konumunu koruyan dilimleyicilerde (ör. Cura) parça köşeye düşmez."""
     data = stl_path.read_bytes()
     count = struct.unpack_from("<I", data, 80)[0]
     index, verts, tris = {}, [], []
@@ -234,7 +235,11 @@ def stl_to_3mf(stl_path: Path, out_path: Path, name: str) -> None:
             tri.append(index[v])
         if len(set(tri)) == 3:
             tris.append(tri)
-    vx = "".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in verts)
+    def num(c):
+        s = f"{c:.5f}"
+        return "0.00000" if s == "-0.00000" else s
+
+    vx = "".join(f'<vertex x="{num(x)}" y="{num(y)}" z="{num(z)}"/>' for x, y, z in verts)
     tx = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in tris)
     model = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -244,7 +249,8 @@ def stl_to_3mf(stl_path: Path, out_path: Path, name: str) -> None:
         '<metadata name="Application">orbea_cm05_garmin_insert.py</metadata>'
         f'<resources><object id="1" name="{name}" type="model"><mesh>'
         f"<vertices>{vx}</vertices><triangles>{tx}</triangles></mesh></object></resources>"
-        '<build><item objectid="1"/></build></model>'
+        f'<build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 {plate_xy[0]:g} {plate_xy[1]:g} 0"/>'
+        "</build></model>"
     )
     content_types = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

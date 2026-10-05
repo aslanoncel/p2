@@ -17,14 +17,31 @@ olarak yeniden çizildi.
 
 | Dosya | Ne işe yarar |
 |---|---|
-| `out/orbea_cm05_garmin_insert.3mf` | **Önerilen.** Bambu Studio, OrcaSlicer, PrusaSlicer, Creality Print ve Cura doğrudan açar |
-| `out/orbea_cm05_garmin_insert.stl` | Her dilimleyicinin (slicer) açtığı evrensel biçim; 3MF açılmazsa bunu kullan |
+| `out/orbea_cm05_garmin_insert.stl` | **Önerilen.** Her dilimleyicinin (slicer) açtığı en sade biçim |
+| `out/orbea_cm05_garmin_insert.3mf` | Alternatif. Standarda uygun 3MF, tabla ortasına yerleşik |
 | `out/orbea_cm05_garmin_insert.step` | Fusion 360, SolidWorks, FreeCAD gibi programlarda düzenlemek için |
 | `orbea_cm05_garmin_insert.py` | Parametrik kaynak (CadQuery). Ölçü değiştirip yeniden üretmek için |
 | `preview.png` | Önizleme |
 
 > **ZIP dosyasını dilimleyiciye doğrudan ekleme.** Bambu Studio ve benzerleri `.zip` kabul etmez.
-> ZIP'i önce aç (çıkart), sonra içindeki `out/` klasöründen `.3mf` ya da `.stl` dosyasını ekle.
+> ZIP'i önce aç (çıkart), sonra içindeki `out/` klasöründen `.stl` ya da `.3mf` dosyasını ekle.
+
+## Dilimleyiciye ekleme
+
+1. Bilgisayarda (Windows/Mac) çalış. Bambu Studio'nun telefon/tablet sürümü yok.
+2. Dosya adının tam olarak `.stl` ya da `.3mf` ile bittiğini kontrol et. Windows'ta Görünüm → Göster →
+   "Dosya adı uzantıları"nı aç. Sonda `.zip` ya da `.txt` fazlalığı varsa sil.
+3. **Bambu Studio / OrcaSlicer:** Dosya → İçe aktar → "3MF/STL/STEP/SVG/OBJ/AMF içe aktar" (Ctrl+I)
+   ya da dosyayı plakanın üstüne sürükle-bırak.
+   - 3MF'te "Bambu Lab'den değil, yalnızca geometri yüklenecek" uyarısı çıkarsa **Tamam**'a bas.
+     "Yalnızca geometriyi içe aktar" seçeneği gelirse onu seç. Bu bir hata değil; STL'de bu uyarı çıkmaz.
+   - Parça plakanın dışında görünürse **A** (Düzenle / Arrange) tuşuna bas.
+4. **PrusaSlicer:** Dosya → İçe aktar → STL/3MF/STEP (Ctrl+I) ya da sürükle-bırak.
+5. **Creality Print:** İçe aktar ya da sürükle-bırak; STL tercih et.
+6. **Cura:** Dosya → Dosya(ları) Aç (Ctrl+O). Cura ZIP ve STEP açmaz. Parça köşede kalırsa Ctrl+R.
+
+Bu dosyalar PrusaSlicer 2.7.2 ile açılıp dilimlenerek test edildi. Bambu Studio ve OrcaSlicer, PrusaSlicer
+kökenlidir ama bu ortamda doğrudan çalıştırılamadı. Creality Print ve Cura da denenmedi.
 
 ## Parçanın yapısı
 
