@@ -17,10 +17,14 @@ olarak yeniden çizildi.
 
 | Dosya | Ne işe yarar |
 |---|---|
-| `out/orbea_cm05_garmin_insert.stl` | Doğrudan dilimleyiciye (slicer) atılır |
+| `out/orbea_cm05_garmin_insert.3mf` | **Önerilen.** Bambu Studio, OrcaSlicer, PrusaSlicer, Creality Print ve Cura doğrudan açar |
+| `out/orbea_cm05_garmin_insert.stl` | Her dilimleyicinin (slicer) açtığı evrensel biçim; 3MF açılmazsa bunu kullan |
 | `out/orbea_cm05_garmin_insert.step` | Fusion 360, SolidWorks, FreeCAD gibi programlarda düzenlemek için |
 | `orbea_cm05_garmin_insert.py` | Parametrik kaynak (CadQuery). Ölçü değiştirip yeniden üretmek için |
 | `preview.png` | Önizleme |
+
+> **ZIP dosyasını dilimleyiciye doğrudan ekleme.** Bambu Studio ve benzerleri `.zip` kabul etmez.
+> ZIP'i önce aç (çıkart), sonra içindeki `out/` klasöründen `.3mf` ya da `.stl` dosyasını ekle.
 
 ## Parçanın yapısı
 
@@ -82,7 +86,7 @@ pip install cadquery
 python orbea_cm05_garmin_insert.py --set slot_gap=2.0 bump_h=0.3
 ```
 
-Komut STL ve STEP dosyalarını `out/` klasörüne yeniden yazar.
+Komut STL, 3MF ve STEP dosyalarını `out/` klasörüne yeniden yazar.
 
 ## Bilinmesi gerekenler
 

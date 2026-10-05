@@ -1,7 +1,7 @@
 """
 Orbea OC CM-05 (MC10 / MC20 gidon boğazı) için Garmin çeyrek-tur (quarter-turn) adaptörü.
 
-Parametrik CadQuery modeli. Çalıştırınca STL + STEP dosyalarını `out/` klasörüne yazar:
+Parametrik CadQuery modeli. Çalıştırınca STL, 3MF ve STEP dosyalarını `out/` klasörüne yazar:
 
     pip install cadquery
     python orbea_cm05_garmin_insert.py
@@ -21,6 +21,8 @@ dillerin üstündeki klik çıkıntılarına oturur. Durdurucular fazla ve ters 
 
 import argparse
 import math
+import struct
+import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -214,6 +216,56 @@ def build(p: Params) -> cq.Workplane:
     return body.clean()
 
 
+def stl_to_3mf(stl_path: Path, out_path: Path, name: str) -> None:
+    """İkili STL'yi 3MF çekirdek standardına uygun pakete çevirir (Bambu Studio, OrcaSlicer, PrusaSlicer,
+    Creality Print, Cura doğrudan açar). CadQuery'nin kendi 3MF çıktısı nesne kimliğini 0 yazıyor;
+    standart pozitif kimlik istediği için katı okuyucular reddedebilir, bu yüzden burada id=1 kullanılır."""
+    data = stl_path.read_bytes()
+    count = struct.unpack_from("<I", data, 80)[0]
+    index, verts, tris = {}, [], []
+    for i in range(count):
+        vals = struct.unpack_from("<12f", data, 84 + 50 * i)
+        tri = []
+        for k in range(3):
+            v = vals[3 + 3 * k : 6 + 3 * k]
+            if v not in index:
+                index[v] = len(verts)
+                verts.append(v)
+            tri.append(index[v])
+        if len(set(tri)) == 3:
+            tris.append(tri)
+    vx = "".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in verts)
+    tx = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in tris)
+    model = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<model unit="millimeter" xml:lang="en-US" '
+        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        f'<metadata name="Title">{name}</metadata>'
+        '<metadata name="Application">orbea_cm05_garmin_insert.py</metadata>'
+        f'<resources><object id="1" name="{name}" type="model"><mesh>'
+        f"<vertices>{vx}</vertices><triangles>{tx}</triangles></mesh></object></resources>"
+        '<build><item objectid="1"/></build></model>'
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+        "</Types>"
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+        'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+        "</Relationships>"
+    )
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", content_types)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("3D/3dmodel.model", model)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=str(Path(__file__).with_name("out")), help="çıktı klasörü")
@@ -241,6 +293,8 @@ def main() -> None:
     part = build(p)
     stem = out / "orbea_cm05_garmin_insert"
     cq.exporters.export(part, f"{stem}.stl", tolerance=0.01, angularTolerance=0.1)
+    # 3MF: Bambu Studio / OrcaSlicer / PrusaSlicer / Creality Print'in doğrudan açtığı biçim (birim: mm)
+    stl_to_3mf(Path(f"{stem}.stl"), Path(f"{stem}.3mf"), "Orbea CM-05 Garmin insert")
     cq.exporters.export(part, f"{stem}.step")
     bb = part.val().BoundingBox()
     print(f"{stem.name}: {bb.xlen:.2f} x {bb.ylen:.2f} x {bb.zlen:.2f} mm, hacim {part.val().Volume():.0f} mm3")
